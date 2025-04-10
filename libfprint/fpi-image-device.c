@@ -299,8 +299,22 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
 
       if (print)
         {
-          fpi_print_add_print (enroll_print, print);
-          priv->enroll_stage += 1;
+          FpiMatchResult match_result = FPI_MATCH_ERROR;
+          if (priv->algorithm == FPI_PRINT_SIGFM)
+            {
+              match_result = fpi_print_sigfm_match (enroll_print, print, 10, &error);
+            }
+          if (match_result != FPI_MATCH_SUCCESS)
+            {
+              fpi_print_add_print (enroll_print, print);
+              priv->enroll_stage += 1;
+            }
+          else
+            {
+              error = fpi_device_retry_new_msg (
+                FP_DEVICE_RETRY_GENERAL,
+                "The fingerprint is too similar to the enrolled fingerprint");
+            }
         }
 
       fpi_device_enroll_progress (device, priv->enroll_stage,

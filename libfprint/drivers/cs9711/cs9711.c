@@ -22,8 +22,9 @@
 
 #define FP_COMPONENT "cs9711"
 
-#include "drivers_api.h"
 #include "cs9711.h"
+#include "drivers_api.h"
+#include <stdio.h>
 
 G_DEFINE_TYPE (FpDeviceCs9711, fpi_device_cs9711, FP_TYPE_IMAGE_DEVICE)
 
@@ -31,22 +32,21 @@ G_DEFINE_TYPE (FpDeviceCs9711, fpi_device_cs9711, FP_TYPE_IMAGE_DEVICE)
 #define CS9711_SENSOR_HEIGHT 236
 
 #define CS9711_DEFAULT_WAIT_TIMEOUT 300
-#define CS9711_DEFAULT_RESET_SLEEP  250
+#define CS9711_DEFAULT_RESET_SLEEP 250
 
-#define CS9711_SEND_ENDPOINT    0x01
+#define CS9711_SEND_ENDPOINT 0x01
 #define CS9711_RECEIVE_ENDPOINT 0x81
 
-#define CS9711_FP_CMD_LEN_1    8
-#define CS9711_FP_RECV_LEN_1   8000
-#define CS9711_FP_RECV_LEN_2   24
+#define CS9711_FP_CMD_LEN_1 8
+#define CS9711_FP_RECV_LEN_1 8000
+#define CS9711_FP_RECV_LEN_2 24
 #define CS9711_FP_RECV_LEN_MAX CS9711_FP_RECV_LEN_1
 
-#define CS9711_FP_CMD_TYPE_INIT  1
+#define CS9711_FP_CMD_TYPE_INIT 1
 #define CS9711_FP_CMD_TYPE_RESET 2
-#define CS9711_FP_CMD_TYPE_SCAN  4
+#define CS9711_FP_CMD_TYPE_SCAN 4
 
 #define CS9711_FP_CMD_STATE_RESULT_EXPECTED { 0xea, 0x01, 0x62, 0xa0, 0x00, 0x00, 0xc3, 0xea }
-
 
 /************************** GENERIC STUFF *************************************/
 
@@ -66,16 +66,20 @@ usb_send_out_sync (FpDevice *dev, guint8 type, GError **error)
 {
   GError *err = NULL;
 
-  guint8 *data = g_malloc0(CS9711_FP_CMD_LEN_1);
+  guint8 *data = g_malloc0 (CS9711_FP_CMD_LEN_1);
 
   data[0] = data[CS9711_FP_CMD_LEN_1 - 1] = 0xEA;
   data[1] = data[CS9711_FP_CMD_LEN_1 - 2] = type;
 
-  g_autoptr(FpiUsbTransfer) transfer = NULL;
+  g_autoptr (FpiUsbTransfer) transfer = NULL;
 
   transfer = fpi_usb_transfer_new (FP_DEVICE (dev));
   transfer->short_is_error = FALSE;
-  fpi_usb_transfer_fill_bulk_full (transfer, CS9711_SEND_ENDPOINT, (guint8 *) data, CS9711_FP_CMD_LEN_1, g_free);
+  fpi_usb_transfer_fill_bulk_full (transfer,
+                                   CS9711_SEND_ENDPOINT,
+                                   (guint8 *)data,
+                                   CS9711_FP_CMD_LEN_1,
+                                   g_free);
   fpi_usb_transfer_submit_sync (transfer, CS9711_DEFAULT_WAIT_TIMEOUT, &err);
   if (err)
     {
@@ -83,7 +87,7 @@ usb_send_out_sync (FpDevice *dev, guint8 type, GError **error)
       g_propagate_error (error, err);
     }
   else
-    fp_dbg("Sent command 0x%X", type);
+    fp_dbg ("Sent command 0x%X", type);
 }
 
 /** Asynchroneous USB bulk write IN helper */
@@ -97,7 +101,7 @@ usb_read_in (FpDevice *dev,
              gpointer user_data)
 {
   FpiUsbTransfer *transfer = NULL;
-  fp_dbg("Reading %lu bytes", length);
+  fp_dbg ("Reading %lu bytes", length);
   // If the response is larger than the buffer, then the usb helpers
   // error before. The reader doesn't seem to care about requestend
   // length, and occasionally answers out of sequence with an invalid
@@ -113,41 +117,59 @@ usb_read_in (FpDevice *dev,
   fpi_usb_transfer_submit (transfer, timeout_in_ms, NULL, callback, user_data);
 }
 
+static void
+usb_reset (FpDevice *_dev)
+{
+  GError *error = NULL;
+  usb_send_out_sync (_dev, CS9711_FP_CMD_TYPE_RESET, &error);
+  if (error)
+    {
+      fp_err ("Error while sending reset command: %s", error->message);
+      g_error_free (error);
+    }
+}
+
 /************************** INIT SSM *************************************/
 
 static void
 m_init_read_cb_check_expected (FpiUsbTransfer *transfer,
-                               FpDevice       *dev,
-                               gpointer        user_data_is_ignore_mismatch_if_non_null,
-                               GError         *error)
+                               FpDevice *dev,
+                               gpointer user_data_is_ignore_mismatch_if_non_null,
+                               GError *error)
 {
   const guint8 expected[] = CS9711_FP_CMD_STATE_RESULT_EXPECTED;
 
-  g_assert(CS9711_FP_CMD_LEN_1 == sizeof(expected));
-  g_assert(transfer->ssm != NULL);
+  g_assert (CS9711_FP_CMD_LEN_1 == sizeof (expected));
+  g_assert (transfer->ssm != NULL);
 
   if (error)
     {
       fp_err ("Read failed: %s, aborting", error->message);
-      fpi_ssm_mark_failed(transfer->ssm, error);
+      fpi_ssm_mark_failed (transfer->ssm, error);
     }
   else
     {
       fp_dbg ("Read %lu of requested %lu", transfer->length, transfer->actual_length);
       if (transfer->actual_length != CS9711_FP_CMD_LEN_1)
-        fp_warn ("Error; expected %lu bytes but got %lu, continuing", (gsize)CS9711_FP_CMD_LEN_1, transfer->actual_length);
-      else if (memcmp (transfer->buffer, expected, CS9711_FP_CMD_LEN_1)) {
-        if (!user_data_is_ignore_mismatch_if_non_null) {
-          fp_warn ("Error; got different state response than expected, but don't understand it anyway, continuing");
+        fp_warn ("Error; expected %lu bytes but got %lu, continuing",
+                 (gsize)CS9711_FP_CMD_LEN_1,
+                 transfer->actual_length);
+      else if (memcmp (transfer->buffer, expected, CS9711_FP_CMD_LEN_1))
+        {
+          if (!user_data_is_ignore_mismatch_if_non_null)
+            {
+              fp_warn ("Error; got different state response than expected, but don't understand it "
+                       "anyway, continuing");
+            }
         }
-      }
       else
         fp_dbg ("Init response valid");
-      fpi_ssm_next_state(transfer->ssm);
+      fpi_ssm_next_state (transfer->ssm);
     }
 }
 
-enum {
+enum
+{
   M_INIT_STATE_SEND_INI_QUERY = 0,
   M_INIT_STATE_RECOVER_READ_IGNORED,
   M_INIT_STATE_RECOVER_SEND_RESET,
@@ -170,7 +192,10 @@ m_init_state (FpiSsm *ssm, FpDevice *_dev)
       usb_send_out_sync (_dev, CS9711_FP_CMD_TYPE_INIT, &error);
       if (error)
         {
-          fp_dbg("Error details: '%s', quark: %u code: %d", error->message, error->domain, error->code);
+          fp_dbg ("Error details: '%s', quark: %u code: %d",
+                  error->message,
+                  error->domain,
+                  error->code);
           // if (g_error_matches (error, G_USB_DEVICE_ERROR, G_USB_DEVICE_ERROR_TIMED_OUT))
           if (error->code == G_USB_DEVICE_ERROR_TIMED_OUT && error->domain == G_USB_DEVICE_ERROR)
             fpi_ssm_next_state (ssm);
@@ -182,8 +207,15 @@ m_init_state (FpiSsm *ssm, FpDevice *_dev)
       break;
 
     case M_INIT_STATE_RECOVER_READ_IGNORED:
-      fp_warn("Send operation had a timeout. Switching to reset procedure. Ignore next message about the result not matching the expected data.");
-      usb_read_in (_dev, ssm, CS9711_FP_CMD_LEN_1, FALSE, CS9711_DEFAULT_WAIT_TIMEOUT, m_init_read_cb_check_expected, NULL);
+      fp_warn ("Send operation had a timeout. Switching to reset procedure. Ignore next message "
+               "about the result not matching the expected data.");
+      usb_read_in (_dev,
+                   ssm,
+                   CS9711_FP_CMD_LEN_1,
+                   FALSE,
+                   CS9711_DEFAULT_WAIT_TIMEOUT,
+                   m_init_read_cb_check_expected,
+                   NULL);
       break;
 
     case M_INIT_STATE_RECOVER_SEND_RESET:
@@ -192,17 +224,31 @@ m_init_state (FpiSsm *ssm, FpDevice *_dev)
       break;
 
     case M_INIT_STATE_RECOVER_READ_IGNORED_RESET:
-      fp_warn("Send operation had a timeout. Switching to reset procedure.");
-      usb_read_in (_dev, ssm, CS9711_FP_CMD_LEN_1, FALSE, CS9711_DEFAULT_WAIT_TIMEOUT, m_init_read_cb_check_expected, self);
+      fp_warn ("Send operation had a timeout. Switching to reset procedure.");
+      usb_read_in (_dev,
+                   ssm,
+                   CS9711_FP_CMD_LEN_1,
+                   FALSE,
+                   CS9711_DEFAULT_WAIT_TIMEOUT,
+                   m_init_read_cb_check_expected,
+                   self);
       break;
 
     case M_INIT_STATE_RECOVER_SEND_INIT:
-      usb_send_out_sync (_dev, CS9711_FP_CMD_TYPE_INIT, &error); // Do not reuse state to only try reset once
+      usb_send_out_sync (_dev,
+                         CS9711_FP_CMD_TYPE_INIT,
+                         &error); // Do not reuse state to only try reset once
       m_util_fail_if_error_or_next (ssm, error);
       break;
 
     case M_INIT_STATE_RECEIVE_STATUS:
-      usb_read_in (_dev, ssm, CS9711_FP_CMD_LEN_1, TRUE, CS9711_DEFAULT_WAIT_TIMEOUT, m_init_read_cb_check_expected, NULL);
+      usb_read_in (_dev,
+                   ssm,
+                   CS9711_FP_CMD_LEN_1,
+                   TRUE,
+                   CS9711_DEFAULT_WAIT_TIMEOUT,
+                   m_init_read_cb_check_expected,
+                   NULL);
       break;
 
     default:
@@ -215,14 +261,15 @@ m_init_state (FpiSsm *ssm, FpDevice *_dev)
 
 /* Complete init sequential state machine */
 static void
-m_init_complete (FpiSsm *ssm, FpDevice *dev, GError *error) //TODO: done
+m_init_complete (FpiSsm *ssm, FpDevice *dev, GError *error) // TODO: done
 {
   fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
 }
 
 /************************** SCAN SSM *************************************/
 
-enum {
+enum
+{
   M_SCAN_INIT_SLEEP = 0,
   M_SCAN_INIT_READ,
   M_SCAN_WAIT_FOR_READ_TO_COMPLETE,
@@ -237,10 +284,7 @@ static const gpointer M_SCAN_READ_CB_BULK_UD_SECOND_BLOCK = (gpointer)2;
 
 /* Read into FpDeviceCs9711->image_buffer if one of the two expected chunk sizes */
 static void
-m_scan_read_cb_bulk (FpiUsbTransfer *transfer,
-                     FpDevice       *dev,
-                     gpointer        user_data,
-                     GError         *error)
+m_scan_read_cb_bulk (FpiUsbTransfer *transfer, FpDevice *dev, gpointer user_data, GError *error)
 {
   FpDeviceCs9711 *self = FPI_DEVICE_CS9711 (dev);
 
@@ -249,10 +293,8 @@ m_scan_read_cb_bulk (FpiUsbTransfer *transfer,
   gsize expected_size = 0;
   gpointer offset = NULL;
 
-  g_assert (FALSE
-    || user_data == M_SCAN_READ_CB_BULK_UD_FIRST_BLOCK
-    || user_data == M_SCAN_READ_CB_BULK_UD_SECOND_BLOCK
-  );
+  g_assert (FALSE || user_data == M_SCAN_READ_CB_BULK_UD_FIRST_BLOCK ||
+            user_data == M_SCAN_READ_CB_BULK_UD_SECOND_BLOCK);
 
   if (user_data == M_SCAN_READ_CB_BULK_UD_FIRST_BLOCK)
     {
@@ -270,42 +312,82 @@ m_scan_read_cb_bulk (FpiUsbTransfer *transfer,
   if (error)
     {
       fp_err ("Read failed: %s, aborting", error->message);
+      usb_reset (dev);
       fpi_ssm_mark_failed (transfer->ssm, error);
     }
   else
     {
       if (transfer->actual_length != expected_size)
         {
-          fp_dbg("\tSkipping buffer print - got %lu bytes, expected %lu", transfer->actual_length, expected_size);
-          error = g_error_new (FP_DEVICE_ERROR, FP_DEVICE_ERROR_DATA_INVALID, "expected %lu bytes but got %lu, can't continue", expected_size, transfer->actual_length);
+          fp_dbg ("\tSkipping buffer print - got %lu bytes, expected %lu",
+                  transfer->actual_length,
+                  expected_size);
+          error = g_error_new (FP_DEVICE_ERROR,
+                               FP_DEVICE_ERROR_DATA_INVALID,
+                               "expected %lu bytes but got %lu, can't continue",
+                               expected_size,
+                               transfer->actual_length);
+          usb_reset (dev);
           fpi_ssm_mark_failed (transfer->ssm, error);
         }
-      else {
-        memcpy (offset, transfer->buffer, expected_size);
-        fpi_ssm_next_state (transfer->ssm);
-      }
+      else
+        {
+          memcpy (offset, transfer->buffer, expected_size);
+          fpi_ssm_next_state (transfer->ssm);
+        }
     }
 }
 
 static int
-m_scan_submit_image (FpiSsm        *ssm,
-                     FpImageDevice *dev)
+m_scan_submit_image (FpiSsm *ssm, FpImageDevice *dev)
 {
   FpDeviceCs9711 *self = FPI_DEVICE_CS9711 (dev);
   FpImage *img;
+  // GError *error = NULL;
+  // g_autofree gchar *dir_path = g_build_filename("/tmp", "fingers", NULL);
+  // g_autofree gchar *timestamp = g_date_time_format(g_date_time_new_now_local(), "%Y%m%d_%H%M%S");
+  // g_autofree gchar *file_path = g_build_filename(dir_path, g_strdup_printf("%s.pbm", timestamp),
+  // NULL); FILE *f;
+
+  // // Create directory if it doesn't exist
+  // if (!g_file_test(dir_path, G_FILE_TEST_EXISTS)) {
+  //   if (g_mkdir_with_parents(dir_path, 0755) != 0) {
+  //     fp_err("Failed to create directory %s: %s", dir_path, g_strerror(errno));
+  //     return 1;
+  //   }
+  // }
 
   img = fp_image_new (CS9711_WIDTH, CS9711_HEIGHT);
   if (img == NULL)
     return 1;
 
   for (gsize y = 0; y < CS9711_SENSOR_HEIGHT; y++)
-    for (gsize x = 0; x < CS9711_SENSOR_WIDTH; x++) {
-      gsize dy = y / 2;
-      gsize dx = x * 2 + y % 2;
-      img->data[dy * CS9711_WIDTH + dx] = self->image_buffer[y * CS9711_SENSOR_WIDTH + x];
-    }
+    for (gsize x = 0; x < CS9711_SENSOR_WIDTH; x++)
+      {
+        gsize dy = y / 2;
+        gsize dx = x * 2 + y % 2;
+        img->data[dy * CS9711_WIDTH + dx] = self->image_buffer[y * CS9711_SENSOR_WIDTH + x];
+      }
 
   img->flags = FPI_IMAGE_PARTIAL;
+
+  // // Save image to PBM file
+  // f = fopen(file_path, "wb");
+  // if (!f) {
+  //   fp_err("Failed to open file %s for writing: %s", file_path, g_strerror(errno));
+  // } else {
+  //   // Write PBM header
+  //   fprintf(f, "P5\n%d %d\n255\n", CS9711_WIDTH, CS9711_HEIGHT);
+
+  //   // Write image data
+  //   if (fwrite(img->data, 1, CS9711_WIDTH * CS9711_HEIGHT, f) != CS9711_WIDTH * CS9711_HEIGHT) {
+  //     fp_err("Failed to write image data to %s: %s", file_path, g_strerror(errno));
+  //   } else {
+  //     fp_dbg("Saved fingerprint image to %s", file_path);
+  //   }
+
+  //   fclose(f);
+  // }
 
   fpi_image_device_image_captured (dev, img);
 
@@ -326,9 +408,20 @@ m_scan_state (FpiSsm *ssm, FpDevice *_dev)
       break;
 
     case M_SCAN_INIT_READ:
-      usb_read_in (_dev, ssm, CS9711_FP_RECV_LEN_1, FALSE, 0, m_scan_read_cb_bulk, M_SCAN_READ_CB_BULK_UD_FIRST_BLOCK);
+      usb_read_in (_dev,
+                   ssm,
+                   CS9711_FP_RECV_LEN_1,
+                   FALSE,
+                   0,
+                   m_scan_read_cb_bulk,
+                   M_SCAN_READ_CB_BULK_UD_FIRST_BLOCK);
       usb_send_out_sync (_dev, CS9711_FP_CMD_TYPE_SCAN, &error);
       fpi_image_device_report_finger_status (image_device, TRUE);
+      if (error)
+        {
+          fp_err ("Error while sending scan command: %s, sending reset", error->message);
+          usb_reset (_dev);
+        }
       m_util_fail_if_error_or_next (ssm, error);
       break;
 
@@ -337,7 +430,13 @@ m_scan_state (FpiSsm *ssm, FpDevice *_dev)
       break;
 
     case M_SCAN_GET_IMAGE_TAIL:
-      usb_read_in (_dev, ssm, CS9711_FP_RECV_LEN_2, TRUE, CS9711_DEFAULT_WAIT_TIMEOUT, m_scan_read_cb_bulk, M_SCAN_READ_CB_BULK_UD_SECOND_BLOCK);
+      usb_read_in (_dev,
+                   ssm,
+                   CS9711_FP_RECV_LEN_2,
+                   TRUE,
+                   CS9711_DEFAULT_WAIT_TIMEOUT,
+                   m_scan_read_cb_bulk,
+                   M_SCAN_READ_CB_BULK_UD_SECOND_BLOCK);
       break;
 
     case M_SCAN_SEND_POST_SCAN:
@@ -399,7 +498,7 @@ dev_open (FpImageDevice *dev)
   g_usb_device_claim_interface (fpi_device_get_usb_device (FP_DEVICE (dev)), 0, 0, &error);
 
   /* Initialize private structure */
-  memset(self->image_buffer, 0, CS9711_FRAME_SIZE);
+  memset (self->image_buffer, 0, CS9711_FRAME_SIZE);
 
   /* Notify open complete */
   fpi_image_device_open_complete (dev, error);
@@ -410,9 +509,10 @@ dev_close (FpImageDevice *dev)
 {
   GError *error = NULL;
 
+  usb_reset (FP_DEVICE(dev));
+
   /* Release usb interface */
-  g_usb_device_release_interface (fpi_device_get_usb_device (FP_DEVICE (dev)),
-                                  0, 0, &error);
+  g_usb_device_release_interface (fpi_device_get_usb_device (FP_DEVICE (dev)), 0, 0, &error);
 
   /* Notify close complete */
   fpi_image_device_close_complete (dev, error);
@@ -420,8 +520,14 @@ dev_close (FpImageDevice *dev)
 
 /* Usb id table of device */
 static const FpIdEntry id_table[] = {
-  { .vid = 0x2541,  .pid = 0x0236, },
-  { .vid = 0x2541,  .pid = 0x9711, },
+  {
+    .vid = 0x2541,
+    .pid = 0x0236,
+  },
+  {
+    .vid = 0x2541,
+    .pid = 0x9711,
+  },
   { .vid = 0, .pid = 0, .driver_data = 0 },
 };
 
@@ -443,18 +549,19 @@ fpi_device_cs9711_class_init (FpDeviceCs9711Class *klass)
   dev_class->type = FP_DEVICE_TYPE_USB;
   dev_class->id_table = id_table;
   dev_class->scan_type = FP_SCAN_TYPE_PRESS;
-  dev_class->nr_enroll_stages = 15;
+  dev_class->nr_enroll_stages = 30;
 
   img_class->algorithm = FPI_PRINT_SIGFM;
+  img_class->score_threshold = 20;
   img_class->img_open = dev_open;
   img_class->img_close = dev_close;
   img_class->activate = dev_activate;
   img_class->deactivate = dev_deactivate;
   img_class->change_state = dev_change_state;
 
-  //TODO: Makes very marginal improvement, stick with default in case
-  //      it changes with a better implementation in the future
-  // img_class->bz3_threshold = 24;
+  // TODO: Makes very marginal improvement, stick with default in case
+  //       it changes with a better implementation in the future
+  //  img_class->bz3_threshold = 24;
 
   img_class->img_width = CS9711_WIDTH;
   img_class->img_height = CS9711_HEIGHT;

@@ -234,6 +234,9 @@ fpi_ssm_free (FpiSsm *machine)
   if (!machine)
     return;
 
+  fp_dbg("[%s] freeing state machine %s", fp_device_get_driver(machine->dev),
+         machine->name);
+
   BUG_ON (machine->timeout != NULL);
 
   if (machine->ssm_data_destroy)
@@ -345,6 +348,8 @@ fpi_ssm_mark_completed (FpiSsm *machine)
   else
     next_state = machine->cur_state + 1;
 
+  fp_dbg("[%s] cleanup, next state %d/%d", fp_device_get_driver(machine->dev), machine->name,
+         next_state, machine->nr_states);
   if (next_state < machine->nr_states)
     {
       machine->cur_state = next_state;
@@ -453,10 +458,16 @@ fpi_ssm_next_state (FpiSsm *machine)
 {
   g_return_if_fail (machine != NULL);
 
-  BUG_ON (machine->completed);
   BUG_ON (machine->timeout != NULL);
 
   fpi_ssm_clear_delayed_action (machine);
+  if (machine->completed)
+  {
+    // the dev might be released, so we can't use machine->dev here
+    // fp_warn ("[%s] %s already completed", fp_device_get_driver (machine->dev),
+    //          machine->name);
+    return;
+  }
 
   machine->cur_state++;
   if (machine->cur_state == machine->nr_states)

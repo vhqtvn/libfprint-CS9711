@@ -107,12 +107,19 @@ SigfmImgInfo* sigfm_extract(const SigfmPix* pix, int width, int height)
     try {
         cv::Mat img;
         img.create(height, width, CV_8UC1);
+
         std::memcpy(img.data, pix, width * height);
         const auto roi = cv::Mat::ones(cv::Size{img.size[1], img.size[0]}, CV_8UC1);
         std::vector<cv::KeyPoint> pts;
 
         cv::Mat descs;
-        cv::SIFT::create()->detectAndCompute(img, roi, pts, descs);
+        cv::SIFT::create(
+            0,
+            3,
+            0.01,
+            10,
+            1.6
+        )->detectAndCompute(img, roi, pts, descs);
 
         auto* info = new SigfmImgInfo{pts, descs};
         return info;
@@ -125,7 +132,7 @@ int sigfm_match_score(SigfmImgInfo* frame, SigfmImgInfo* enrolled)
 {
     try {
         std::vector<std::vector<cv::DMatch>> points;
-        auto bfm = cv::BFMatcher::create();
+        auto bfm = cv::BFMatcher::create(cv::NORM_L2);
         bfm->knnMatch(frame->descriptors, enrolled->descriptors, points, 2);
         std::set<match> matches_unique;
         int nb_matched = 0;
