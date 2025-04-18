@@ -48,14 +48,29 @@ struct deserializer<SigfmImgInfo> : public std::true_type {
 } // namespace bin
 
 namespace {
+// original
 // constexpr auto distance_match = 0.75;
 // constexpr auto length_match = 0.05;
 // constexpr auto angle_match = 0.05;
 // constexpr auto min_match = 5;
-constexpr auto distance_match = 0.9;
-constexpr auto length_match = 0.02;
-constexpr auto angle_match = 0.06;
-constexpr auto min_match = 6;
+// best ar*(1-far)
+// constexpr auto distance_match = 0.9;
+// constexpr auto length_match = 0.02;
+// constexpr auto angle_match = 0.06;
+// constexpr auto min_match = 6;
+// constexpr auto score_threshold = 5.5; // updated to 10
+// best ar*(1-far)^3
+// constexpr auto distance_match = 0.85;
+// constexpr auto length_match = 0.1325;
+// constexpr auto angle_match = 0.07;
+// constexpr auto min_match = 5;
+// const auto score_threshold = 20;
+// best ar*(1-far)^3 v2
+constexpr auto distance_match = 0.85;
+constexpr auto length_match = 0.1;
+constexpr auto angle_match = 0.04;
+constexpr auto min_match = 8;
+// const auto score_threshold = 11.5;
 struct match {
     cv::Point2i p1;
     cv::Point2i p2;

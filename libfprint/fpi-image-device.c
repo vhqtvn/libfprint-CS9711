@@ -302,7 +302,9 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
           FpiMatchResult match_result = FPI_MATCH_ERROR;
           if (priv->algorithm == FPI_PRINT_SIGFM)
             {
-              match_result = fpi_print_sigfm_match (enroll_print, print, 10, &error);
+              match_result = fpi_print_sigfm_match (enroll_print, print, priv->score_threshold, &error);
+            } else {
+              match_result = fpi_print_bz3_match (enroll_print, print, priv->score_threshold, &error);
             }
           if (match_result != FPI_MATCH_SUCCESS)
             {

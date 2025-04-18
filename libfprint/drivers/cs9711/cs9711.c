@@ -549,10 +549,10 @@ fpi_device_cs9711_class_init (FpDeviceCs9711Class *klass)
   dev_class->type = FP_DEVICE_TYPE_USB;
   dev_class->id_table = id_table;
   dev_class->scan_type = FP_SCAN_TYPE_PRESS;
-  dev_class->nr_enroll_stages = 30;
+  dev_class->nr_enroll_stages = 20;
 
   img_class->algorithm = FPI_PRINT_SIGFM;
-  img_class->score_threshold = 5.2632;
+  img_class->score_threshold = 20;
   img_class->img_open = dev_open;
   img_class->img_close = dev_close;
   img_class->activate = dev_activate;
