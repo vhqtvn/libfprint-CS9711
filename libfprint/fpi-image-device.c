@@ -38,12 +38,11 @@ fp_image_device_get_instance_private (FpImageDevice *self)
 {
   FpImageDeviceClass *img_class = g_type_class_peek_static (FP_TYPE_IMAGE_DEVICE);
 
-  return G_STRUCT_MEMBER_P (self,
-                            g_type_class_get_instance_private_offset (img_class));
+  return G_STRUCT_MEMBER_P (self, g_type_class_get_instance_private_offset (img_class));
 }
 
-static void fp_image_device_change_state (FpImageDevice      *self,
-                                          FpiImageDeviceState state);
+static void
+fp_image_device_change_state (FpImageDevice *self, FpiImageDeviceState state);
 
 /* Private shared functions */
 
@@ -105,26 +104,29 @@ fp_image_device_change_state (FpImageDevice *self, FpiImageDeviceState state)
     { FPI_IMAGE_DEVICE_STATE_ACTIVATING, FPI_IMAGE_DEVICE_STATE_INACTIVE },
 
     { FPI_IMAGE_DEVICE_STATE_IDLE, FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON },
-    { FPI_IMAGE_DEVICE_STATE_IDLE, FPI_IMAGE_DEVICE_STATE_CAPTURE }, /* raw mode -- currently not supported */
+    { FPI_IMAGE_DEVICE_STATE_IDLE,
+      FPI_IMAGE_DEVICE_STATE_CAPTURE }, /* raw mode -- currently not supported */
     { FPI_IMAGE_DEVICE_STATE_IDLE, FPI_IMAGE_DEVICE_STATE_DEACTIVATING },
 
     { FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON, FPI_IMAGE_DEVICE_STATE_CAPTURE },
-    { FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON, FPI_IMAGE_DEVICE_STATE_DEACTIVATING }, /* cancellation */
+    { FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON,
+      FPI_IMAGE_DEVICE_STATE_DEACTIVATING }, /* cancellation */
 
     { FPI_IMAGE_DEVICE_STATE_CAPTURE, FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF },
-    { FPI_IMAGE_DEVICE_STATE_CAPTURE, FPI_IMAGE_DEVICE_STATE_IDLE }, /* raw mode -- currently not supported */
+    { FPI_IMAGE_DEVICE_STATE_CAPTURE,
+      FPI_IMAGE_DEVICE_STATE_IDLE }, /* raw mode -- currently not supported */
     { FPI_IMAGE_DEVICE_STATE_CAPTURE, FPI_IMAGE_DEVICE_STATE_DEACTIVATING }, /* cancellation */
 
     { FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF, FPI_IMAGE_DEVICE_STATE_IDLE },
-    { FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF, FPI_IMAGE_DEVICE_STATE_DEACTIVATING }, /* cancellation */
+    { FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF,
+      FPI_IMAGE_DEVICE_STATE_DEACTIVATING }, /* cancellation */
 
     { FPI_IMAGE_DEVICE_STATE_DEACTIVATING, FPI_IMAGE_DEVICE_STATE_INACTIVE },
   };
 
   prev_state_str = g_enum_to_string (FPI_TYPE_IMAGE_DEVICE_STATE, priv->state);
   state_str = g_enum_to_string (FPI_TYPE_IMAGE_DEVICE_STATE, state);
-  fp_dbg ("Image device internal state change from %s to %s",
-          prev_state_str, state_str);
+  fp_dbg ("Image device internal state change from %s to %s", prev_state_str, state_str);
 
   for (i = 0; i < G_N_ELEMENTS (valid_transitions); i++)
     {
@@ -136,7 +138,8 @@ fp_image_device_change_state (FpImageDevice *self, FpiImageDeviceState state)
     }
   if (!transition_is_valid)
     g_warning ("Internal state machine issue: transition from %s to %s should not happen!",
-               prev_state_str, state_str);
+               prev_state_str,
+               state_str);
 
   priv->state = state;
   g_object_notify (G_OBJECT (self), "fpi-image-device-state");
@@ -236,8 +239,8 @@ fp_image_device_maybe_complete_action (FpImageDevice *self, GError *error)
 static void
 fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, gpointer user_data)
 {
-  g_autoptr(FpImage) image = FP_IMAGE (source_object);
-  g_autoptr(FpPrint) print = NULL;
+  g_autoptr (FpImage) image = FP_IMAGE (source_object);
+  g_autoptr (FpPrint) print = NULL;
   GError *error = NULL;
   FpImageDevice *self = FP_IMAGE_DEVICE (user_data);
   FpDevice *device = FP_DEVICE (self);
@@ -262,7 +265,23 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
       g_warning ("Failed to detect minutiae: %s", error->message);
       g_clear_pointer (&error, g_error_free);
 
-      error = fpi_device_retry_new_msg (FP_DEVICE_RETRY_GENERAL, "Minutiae detection failed, please retry");
+      error = fpi_device_retry_new_msg (FP_DEVICE_RETRY_GENERAL,
+                                        "Minutiae detection failed, please retry");
+    }
+
+  if (!error && priv->algorithm == FPI_PRINT_SIGFM)
+    {
+      if (!fpi_print_sigfm_qualified (image))
+        {
+          g_warning ("Fingerprint is not qualified for matching, please retry");
+          error =
+            fpi_device_retry_new_msg (FP_DEVICE_RETRY_GENERAL,
+                                      "Fingerprint is not qualified for matching, please retry");
+        }
+      else
+        {
+          g_debug ("Fingerprint is qualified for matching");
+        }
     }
 
   action = fpi_device_get_current_action (device);
@@ -302,9 +321,14 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
           FpiMatchResult match_result = FPI_MATCH_ERROR;
           if (priv->algorithm == FPI_PRINT_SIGFM)
             {
-              match_result = fpi_print_sigfm_match (enroll_print, print, priv->score_threshold, &error);
-            } else {
-              match_result = fpi_print_bz3_match (enroll_print, print, priv->score_threshold, &error);
+              if (priv->enroll_stage > 0)
+                match_result =
+                  fpi_print_sigfm_match (enroll_print, print, priv->score_threshold, 0, &error);
+            }
+          else
+            {
+              match_result =
+                fpi_print_bz3_match (enroll_print, print, priv->score_threshold, &error);
             }
           if (match_result != FPI_MATCH_SUCCESS)
             {
@@ -319,8 +343,7 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
             }
         }
 
-      fpi_device_enroll_progress (device, priv->enroll_stage,
-                                  g_steal_pointer (&print), error);
+      fpi_device_enroll_progress (device, priv->enroll_stage, g_steal_pointer (&print), error);
 
       /* Start another scan or deactivate. */
       if (priv->enroll_stage == fp_device_get_nr_enroll_stages (device))
@@ -342,11 +365,9 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
       if (print)
         {
           if (priv->algorithm == FPI_PRINT_NBIS)
-            result = fpi_print_bz3_match (template, print, priv->score_threshold,
-                                          &error);
+            result = fpi_print_bz3_match (template, print, priv->score_threshold, &error);
           else if (priv->algorithm == FPI_PRINT_SIGFM)
-            result = fpi_print_sigfm_match (template, print, priv->score_threshold,
-                                            &error);
+            result = fpi_print_sigfm_match (template, print, priv->score_threshold, 3, &error);
         }
       else
         {
@@ -354,7 +375,10 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
         }
 
       if (!error || error->domain == FP_DEVICE_RETRY)
-        fpi_device_verify_report (device, result, g_steal_pointer (&print), g_steal_pointer (&error));
+        fpi_device_verify_report (device,
+                                  result,
+                                  g_steal_pointer (&print),
+                                  g_steal_pointer (&error));
 
       fp_image_device_maybe_complete_action (self, g_steal_pointer (&error));
     }
@@ -371,11 +395,10 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
 
           int match_result = FPI_MATCH_ERROR;
           if (priv->algorithm == FPI_PRINT_NBIS)
-            match_result = fpi_print_bz3_match (template, print,
-                                                priv->score_threshold, &error);
+            match_result = fpi_print_bz3_match (template, print, priv->score_threshold, &error);
           else if (priv->algorithm == FPI_PRINT_SIGFM)
-            match_result = fpi_print_sigfm_match (template, print,
-                                                  priv->score_threshold, &error);
+            match_result =
+              fpi_print_sigfm_match (template, print, 3, priv->score_threshold, &error);
 
           if (match_result == FPI_MATCH_SUCCESS)
             {
@@ -385,7 +408,10 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
         }
 
       if (!error || error->domain == FP_DEVICE_RETRY)
-        fpi_device_identify_report (device, result, g_steal_pointer (&print), g_steal_pointer (&error));
+        fpi_device_identify_report (device,
+                                    result,
+                                    g_steal_pointer (&print),
+                                    g_steal_pointer (&error));
 
       fp_image_device_maybe_complete_action (self, g_steal_pointer (&error));
     }
@@ -415,8 +441,7 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
  * callback.
  */
 void
-fpi_image_device_set_score_threshold (FpImageDevice *self,
-                                      gint           score_threshold)
+fpi_image_device_set_score_threshold (FpImageDevice *self, gint score_threshold)
 {
   FpImageDevicePrivate *priv = fp_image_device_get_instance_private (self);
 
@@ -435,8 +460,7 @@ fpi_image_device_set_score_threshold (FpImageDevice *self,
  * the sensor.
  */
 void
-fpi_image_device_report_finger_status (FpImageDevice *self,
-                                       gboolean       present)
+fpi_image_device_report_finger_status (FpImageDevice *self, gboolean present)
 {
   FpDevice *device = FP_DEVICE (self);
   FpImageDevicePrivate *priv = fp_image_device_get_instance_private (self);
@@ -519,10 +543,8 @@ fpi_image_device_image_captured (FpImageDevice *self, FpImage *image)
 
   g_return_if_fail (image != NULL);
   g_return_if_fail (priv->state == FPI_IMAGE_DEVICE_STATE_CAPTURE);
-  g_return_if_fail (action == FPI_DEVICE_ACTION_ENROLL ||
-                    action == FPI_DEVICE_ACTION_VERIFY ||
-                    action == FPI_DEVICE_ACTION_IDENTIFY ||
-                    action == FPI_DEVICE_ACTION_CAPTURE);
+  g_return_if_fail (action == FPI_DEVICE_ACTION_ENROLL || action == FPI_DEVICE_ACTION_VERIFY ||
+                    action == FPI_DEVICE_ACTION_IDENTIFY || action == FPI_DEVICE_ACTION_CAPTURE);
 
   g_debug ("Image device captured an image");
 
@@ -534,13 +556,15 @@ fpi_image_device_image_captured (FpImageDevice *self, FpImage *image)
        *      to normalize the image which will happen as a by-product. */
       fp_image_detect_minutiae (image,
                                 fpi_device_get_cancellable (FP_DEVICE (self)),
-                                fpi_image_device_minutiae_detected, self);
+                                fpi_image_device_minutiae_detected,
+                                self);
     }
   else
     {
       fp_image_extract_sigfm_info (image,
                                    fpi_device_get_cancellable (FP_DEVICE (self)),
-                                   fpi_image_device_minutiae_detected, self);
+                                   fpi_image_device_minutiae_detected,
+                                   self);
     }
 
   /* XXX: This is wrong if we add support for raw capture mode. */
@@ -568,10 +592,8 @@ fpi_image_device_retry_scan (FpImageDevice *self, FpDeviceRetry retry)
   /* We might be waiting for a finger at this point, so just accept
    * all but INACTIVE */
   g_return_if_fail (priv->state != FPI_IMAGE_DEVICE_STATE_INACTIVE);
-  g_return_if_fail (action == FPI_DEVICE_ACTION_ENROLL ||
-                    action == FPI_DEVICE_ACTION_VERIFY ||
-                    action == FPI_DEVICE_ACTION_IDENTIFY ||
-                    action == FPI_DEVICE_ACTION_CAPTURE);
+  g_return_if_fail (action == FPI_DEVICE_ACTION_ENROLL || action == FPI_DEVICE_ACTION_VERIFY ||
+                    action == FPI_DEVICE_ACTION_IDENTIFY || action == FPI_DEVICE_ACTION_CAPTURE);
 
   error = fpi_device_retry_new (retry);
 
@@ -587,7 +609,6 @@ fpi_image_device_retry_scan (FpImageDevice *self, FpDeviceRetry retry)
       fpi_device_verify_report (FP_DEVICE (self), FPI_MATCH_ERROR, NULL, error);
       fp_image_device_maybe_complete_action (self, NULL);
       fpi_image_device_deactivate (self, TRUE);
-
     }
   else if (action == FPI_DEVICE_ACTION_IDENTIFY)
     {
@@ -624,7 +645,9 @@ fpi_image_device_session_error (FpImageDevice *self, GError *error)
   if (!error)
     {
       g_warning ("Driver did not provide an error, generating a generic one");
-      error = g_error_new (FP_DEVICE_ERROR, FP_DEVICE_ERROR_GENERAL, "Driver reported session error without an error");
+      error = g_error_new (FP_DEVICE_ERROR,
+                           FP_DEVICE_ERROR_GENERAL,
+                           "Driver reported session error without an error");
     }
 
   if (!priv->active)
@@ -645,13 +668,15 @@ fpi_image_device_session_error (FpImageDevice *self, GError *error)
       /* Ignore cancellation errors here, as we will explicitly deactivate
        * anyway (or, may already have done so at this point).
        */
-      g_debug ("Driver reported a cancellation error, this is expected but not required. Ignoring.");
+      g_debug (
+        "Driver reported a cancellation error, this is expected but not required. Ignoring.");
       g_clear_error (&error);
       return;
     }
   else if (priv->state == FPI_IMAGE_DEVICE_STATE_INACTIVE)
     {
-      g_warning ("Driver reported session error while deactivating already, ignoring. This indicates a driver bug.");
+      g_warning ("Driver reported session error while deactivating already, ignoring. This "
+                 "indicates a driver bug.");
       g_clear_error (&error);
       return;
     }
@@ -680,10 +705,8 @@ fpi_image_device_activate_complete (FpImageDevice *self, GError *error)
 
   g_return_if_fail (priv->active == FALSE);
   g_return_if_fail (priv->state == FPI_IMAGE_DEVICE_STATE_ACTIVATING);
-  g_return_if_fail (action == FPI_DEVICE_ACTION_ENROLL ||
-                    action == FPI_DEVICE_ACTION_VERIFY ||
-                    action == FPI_DEVICE_ACTION_IDENTIFY ||
-                    action == FPI_DEVICE_ACTION_CAPTURE);
+  g_return_if_fail (action == FPI_DEVICE_ACTION_ENROLL || action == FPI_DEVICE_ACTION_VERIFY ||
+                    action == FPI_DEVICE_ACTION_IDENTIFY || action == FPI_DEVICE_ACTION_CAPTURE);
 
   if (error)
     {

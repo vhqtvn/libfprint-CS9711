@@ -50,7 +50,9 @@ FpiMatchResult fpi_print_bz3_match (FpPrint *temp,
                                     GError **error);
 
 FpiMatchResult fpi_print_sigfm_match (FpPrint * template, FpPrint * print,
-                                      gint score_threshold, GError * *error);
+                                      gint score_threshold, gint min_matches, GError * *error);
+
+gboolean fpi_print_sigfm_qualified (FpImage *image);
 
 /* Helpers to encode metadata into user ID strings. */
 gchar * fpi_print_generate_user_id (FpPrint * print);

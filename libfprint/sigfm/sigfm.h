@@ -69,6 +69,16 @@ SigfmImgInfo * sigfm_deserialize_binary (const unsigned char * bytes,
                                          int                   len);
 
 /**
+ * @brief Check if a fingerprint is qualified for matching
+ *
+ * @param pix Pixels of the image
+ * @param width Width of the image
+ * @param height Height of the image
+ * @return int 1 if the fingerprint is qualified, 0 if it is not
+ */
+int sigfm_fp_qualified (const SigfmPix *pix, int width, int height);
+
+/**
  * @brief Keypoints for an image. Low keypoints generally means the image is
  * low quality for matching
  *
