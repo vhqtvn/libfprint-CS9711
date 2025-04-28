@@ -282,6 +282,7 @@ fpi_print_sigfm_match (FpPrint *template,
                                   template->type);
       return FPI_MATCH_ERROR;
     }
+  min_matches = min_matches > 0 ? min_matches : 1;
   SigfmImgInfo *against = g_ptr_array_index (print->prints, 0);
   int n_matches = 0;
   for (int i = 0; i != template->prints->len; ++i)
@@ -290,6 +291,7 @@ fpi_print_sigfm_match (FpPrint *template,
       int score = sigfm_match_score (pinfo, against);
       if (score < 0)
         {
+          fp_dbg ("error in sigfm_match_score, score %d", score);
           *error =
             fpi_device_error_new_msg (FP_DEVICE_ERROR_DATA_INVALID, "error in sigfm_match_score");
           return FPI_MATCH_ERROR;
@@ -302,6 +304,12 @@ fpi_print_sigfm_match (FpPrint *template,
           if (++n_matches >= min_matches)
             return FPI_MATCH_SUCCESS;
         }
+    }
+  if (n_matches > 0)
+    {
+      fp_dbg ("Partial match, returning retry");
+      *error = fpi_device_retry_new_msg (FP_DEVICE_RETRY_GENERAL, "Fingerprint not qualified");
+      return FPI_MATCH_ERROR;
     }
   return FPI_MATCH_FAIL;
 }

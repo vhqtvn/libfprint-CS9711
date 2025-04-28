@@ -318,7 +318,7 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
 
       if (print)
         {
-          FpiMatchResult match_result = FPI_MATCH_ERROR;
+          FpiMatchResult match_result = FPI_MATCH_FAIL;
           if (priv->algorithm == FPI_PRINT_SIGFM)
             {
               if (priv->enroll_stage > 0)
@@ -330,7 +330,7 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
               match_result =
                 fpi_print_bz3_match (enroll_print, print, priv->score_threshold, &error);
             }
-          if (match_result != FPI_MATCH_SUCCESS)
+          if (match_result == FPI_MATCH_FAIL)
             {
               fpi_print_add_print (enroll_print, print);
               priv->enroll_stage += 1;
@@ -367,7 +367,7 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
           if (priv->algorithm == FPI_PRINT_NBIS)
             result = fpi_print_bz3_match (template, print, priv->score_threshold, &error);
           else if (priv->algorithm == FPI_PRINT_SIGFM)
-            result = fpi_print_sigfm_match (template, print, priv->score_threshold, 3, &error);
+            result = fpi_print_sigfm_match (template, print, priv->score_threshold, 2, &error);
         }
       else
         {
@@ -398,7 +398,7 @@ fpi_image_device_minutiae_detected (GObject *source_object, GAsyncResult *res, g
             match_result = fpi_print_bz3_match (template, print, priv->score_threshold, &error);
           else if (priv->algorithm == FPI_PRINT_SIGFM)
             match_result =
-              fpi_print_sigfm_match (template, print, 3, priv->score_threshold, &error);
+              fpi_print_sigfm_match (template, print, 2, priv->score_threshold, &error);
 
           if (match_result == FPI_MATCH_SUCCESS)
             {
